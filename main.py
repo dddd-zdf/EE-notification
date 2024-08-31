@@ -1,61 +1,67 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
+import json
 import time
 from datetime import datetime
 import apprise
-import json
-
+from playwright.sync_api import sync_playwright
 
 with open('config.json', 'r') as f:
     config = json.load(f)
 
 discord, interval, url = config['discord'], config['interval'] * 60, config['url_base'] + str(config['round'])
+now = datetime.now()
 
+# Wait until 12 PM if current time is before 12 PM
+if now.hour < 12:
+    target_time = now.replace(hour=12, minute=0, second=0, microsecond=0)
+    time_to_wait = (target_time - now).total_seconds()
+    time.sleep(time_to_wait)
 
 apobj = apprise.Apprise()
 apobj.add('discord://' + discord)
 
-driver = webdriver.Chrome()
 
-while True:
-    driver.get(url)
-    time.sleep(3)
-    element = driver.find_element(By.XPATH, "//*[@id='wb-auto-5']")
-    if element.text == '':
-        now = datetime.now()
-        if now.hour < 16:
-            time.sleep(interval)
-            continue
-        else:
-            body = 'no draw today'
-            break
-    draw = driver.find_element(By.CLASS_NAME, 'well')
+with sync_playwright() as p:
+    browser = p.firefox.launch()
+    page = browser.new_page()
 
-    try:
-        pop = driver.find_element(By.ID, 'gc-im-popup')
-        driver.execute_script("arguments[0].style.display = 'none';", pop) 
-    except:
-        pass
+    while True:
+        page.goto(url)
+        time.sleep(1)
+        element = page.query_selector("//*[@id='wb-auto-5']")
+        if element and element.inner_text() == '':
+            print('empty')
+            now = datetime.now()
+            if now.hour < 16:
+                time.sleep(interval)
+                continue
+            else:
+                body = 'no draw today'
+                break
 
+        draw = page.query_selector('.well')
+        
+        # Hide the popup if it exists
+        pop = page.query_selector('#gc-im-popup')
+        if pop:
+            page.evaluate("arguments[0].style.display = 'none';", pop)
 
-    draw.screenshot('result.png')
-    body = url
-    config['round'] += 1
-    break
+        draw.screenshot(path='result.png')
+        title = url
+        body = '@everyone'
+        config['round'] += 1
+        break
 
-with open('config.json', 'w') as f:
-    json.dump(config, f, indent=4)
+    with open('config.json', 'w') as f:
+        json.dump(config, f, indent=4)
 
+    apobj.notify(
+        title=title,
+        body=body,
+        attach='result.png'
+    )
 
-apobj.notify(
-    body = body,
-    attach='result.png'
-)
+    import os
+    if os.path.exists("result.png"):
+        os.remove("result.png")
 
-import os
-if os.path.exists("result.png"):
-  os.remove("result.png")
-
-
-driver.quit()
+    browser.close()
