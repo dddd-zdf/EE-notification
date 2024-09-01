@@ -14,12 +14,11 @@ def toronto_time():
     utc_now = datetime.now(pytz.utc)
     return utc_now.astimezone(toronto_tz)
 
-
 def main():
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    discord, interval, url = config['discord'], config['interval'] * 60, config['url_base'] + str(config['round'])
+    discord, interval, url, crs = config['discord'], config['interval'] * 60, config['url_base'] + str(config['round']), config['CRS']
 
     now = toronto_time()
 
@@ -31,16 +30,26 @@ def main():
 
     apobj = apprise.Apprise()
     apobj.add('discord://' + discord)
-    title = ''
+
+
     with sync_playwright() as p:
-        browser = p.firefox.launch(executable_path=os.path.join(cwd,'ms-playwright/firefox-1458/firefox/firefox'))
+        browser = p.firefox.launch()
         page = browser.new_page()
 
         while True:
-            page.goto(url)
-            time.sleep(1)
-            element = page.query_selector("//*[@id='wb-auto-5']")
-            if element and element.inner_text() == '':
+
+            # retry go to page
+            while True:
+                try:
+                    page.goto(url)
+                except:
+                    continue
+                else:
+                    break
+
+            time.sleep(10)
+            cut_off = page.locator("#wb-auto-10")
+            if cut_off and cut_off.inner_text() == '':
                 now = toronto_time()
                 if now.hour < 16:
                     time.sleep(interval)
@@ -48,17 +57,30 @@ def main():
                 else:
                     body = 'no draw today'
                     break
+            draw = {
+                'class': page.locator("#wb-auto-6").inner_text(),
+                'cut_off': int(cut_off.inner_text()),
+                'tie_breaking': page.locator("#wb-auto-11").inner_text()
+            }
 
-            draw = page.query_selector('.well')
+            result = ''
 
-            # Hide the popup if it exists
-            pop = page.query_selector('#gc-im-popup')
-            if pop:
-                page.evaluate("(element) => element.remove()", pop)
+            if (any(match in draw['class'] for match in config['category'])):
+                if draw['cut_off'] < crs or (draw['cut_off'] == crs and datetime.strptime(config['submitted'], "%Y-%m-%d %H:%M %Z") <= datetime.strptime(draw['tie_breaking'], "%B %d, %Y at %H:%M:%S %Z")):
+                    result = 'YYYYYYYYYYYYYYYYYYYYES@everyone'
+                else:
+                    result = 'NOOOOOOOOOOOOOOOOOOOOO'
+            else:
+                result = 'NOT YOUR DRAW!'
 
-            draw.screenshot(path='result.png')
-            title = url
-            body = '@everyone'
+            body = f"""
+{result}
+{draw['class']}
+{draw['cut_off']}
+{draw['tie_breaking']}
+{url}
+            """
+
             config['round'] += 1
             break
 
@@ -66,13 +88,8 @@ def main():
             json.dump(config, f, indent=4)
 
         apobj.notify(
-            title=title,
-            body=body,
-            attach='result.png'
+            body=body
         )
-
-        if os.path.exists("result.png"):
-            os.remove("result.png")
 
         browser.close()
 

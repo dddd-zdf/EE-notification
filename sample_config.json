@@ -2,5 +2,12 @@
     "discord": "{WebhookID}/{WebhookToken}",
     "url_base": "https://www.canada.ca/en/immigration-refugees-citizenship/corporate/mandate/policies-operational-instructions-agreements/ministerial-instructions/express-entry-rounds/invitations.html?q=",
     "interval": 5,
-    "round": 313
+    "round": 313,
+    "CRS": 501,
+    "category": [
+        "Canadian Experience",
+        "STEM",
+        "General"
+    ],
+    "submitted": "2024-8-1 2:00 UTC"
 }
