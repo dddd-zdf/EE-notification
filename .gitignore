@@ -1,3 +1,5 @@
 config.json
 chromedriver.exe
 /.venv/*
+debug.py
+/__pycache__/*
